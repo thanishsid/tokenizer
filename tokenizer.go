@@ -22,22 +22,6 @@ func CreateToken(ctx context.Context, c Config, claims jwt.Claims) (string, erro
 	return token, nil
 }
 
-// Create a new encrypted jwt token.
-func CreateEncryptedToken(ctx context.Context, c Config, claims jwt.Claims) (string, error) {
-	encryptionKey := c.GetEncryptionKey()
-
-	if encryptionKey == nil {
-		return "", errors.New("encyryption key not found")
-	}
-
-	token, err := CreateToken(ctx, c, claims)
-	if err != nil {
-		return "", err
-	}
-
-	return encryptAES(c.GetEncryptionKey(), token)
-}
-
 // Verify jwt token signature and deserialize the claims to the provided dst.
 func ParseToken(ctx context.Context, c Config, token string, claims jwt.Claims) error {
 
@@ -51,14 +35,7 @@ func ParseToken(ctx context.Context, c Config, token string, claims jwt.Claims) 
 			return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
 		}
 
-		switch t.Method.(type) {
-		case *jwt.SigningMethodRSA, *jwt.SigningMethodEd25519:
-			return c.GetPublicKey(), nil
-		case *jwt.SigningMethodHMAC:
-			return c.GetPrivateKey(), nil
-		}
-
-		return nil, errors.New("unsupported signing method")
+		return c.GetPublicKey(), nil
 	})
 
 	if errors.Is(err, jwt.ErrTokenExpired) {
@@ -70,18 +47,4 @@ func ParseToken(ctx context.Context, c Config, token string, claims jwt.Claims) 
 	}
 
 	return nil
-}
-
-// Parse an encrypted jwt token and deserialize the claims to the provided dst.
-func ParseEncryptedToken(ctx context.Context, c Config, token string, claims jwt.Claims) error {
-	if reflect.ValueOf(claims).Kind() != reflect.Pointer {
-		return ErrNonPointerClaim
-	}
-
-	decodedToken, err := decryptAES(c.GetEncryptionKey(), token)
-	if err != nil {
-		return err
-	}
-
-	return ParseToken(ctx, c, decodedToken, claims)
 }

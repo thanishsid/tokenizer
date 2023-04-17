@@ -2,6 +2,7 @@ package tokenizer
 
 import (
 	"crypto"
+	"crypto/ecdsa"
 	"crypto/rsa"
 	"errors"
 
@@ -12,14 +13,12 @@ type Config interface {
 	GetSigningMethod() jwt.SigningMethod
 	GetPrivateKey() any
 	GetPublicKey() any
-	GetEncryptionKey() []byte
 }
 
 // HMAC
 type HMAC struct {
 	SigningMethod jwt.SigningMethod
 	SigningKey    []byte
-	EncryptionKey []byte
 }
 
 func (h *HMAC) GetSigningMethod() jwt.SigningMethod {
@@ -31,11 +30,7 @@ func (h *HMAC) GetPrivateKey() any {
 }
 
 func (h *HMAC) GetPublicKey() any {
-	return nil
-}
-
-func (h *HMAC) GetEncryptionKey() []byte {
-	return h.EncryptionKey
+	return h.SigningKey
 }
 
 // RSA
@@ -43,7 +38,6 @@ type RSA struct {
 	SigningMethod jwt.SigningMethod
 	PrivateKey    *rsa.PrivateKey
 	PublicKey     *rsa.PublicKey
-	EncryptionKey []byte
 }
 
 func (h *RSA) GetSigningMethod() jwt.SigningMethod {
@@ -58,16 +52,11 @@ func (h *RSA) GetPublicKey() any {
 	return h.PublicKey
 }
 
-func (h *RSA) GetEncryptionKey() []byte {
-	return h.EncryptionKey
-}
-
 // ED
 type ED struct {
 	SigningMethod jwt.SigningMethod
 	PrivateKey    crypto.PrivateKey
 	PublicKey     crypto.PublicKey
-	EncryptionKey []byte
 }
 
 func (h *ED) GetSigningMethod() jwt.SigningMethod {
@@ -82,12 +71,27 @@ func (h *ED) GetPublicKey() any {
 	return h.PublicKey
 }
 
-func (h *ED) GetEncryptionKey() []byte {
-	return h.EncryptionKey
+// EC
+type EC struct {
+	SigningMethod jwt.SigningMethod
+	PrivateKey    *ecdsa.PrivateKey
+	PublicKey     *ecdsa.PublicKey
+}
+
+func (h *EC) GetSigningMethod() jwt.SigningMethod {
+	return h.SigningMethod
+}
+
+func (h *EC) GetPrivateKey() any {
+	return h.PrivateKey
+}
+
+func (h *EC) GetPublicKey() any {
+	return h.PublicKey
 }
 
 // New Hmac configuration
-func NewHMAC(sm jwt.SigningMethod, signingKey, encryptionKey []byte) (*HMAC, error) {
+func NewHMAC(sm jwt.SigningMethod, signingKey []byte) (*HMAC, error) {
 	if _, ok := sm.(*jwt.SigningMethodHMAC); !ok {
 		return nil, errors.New("invalid signing method for hmac")
 	}
@@ -95,38 +99,44 @@ func NewHMAC(sm jwt.SigningMethod, signingKey, encryptionKey []byte) (*HMAC, err
 	return &HMAC{
 		SigningMethod: sm,
 		SigningKey:    signingKey,
-		EncryptionKey: encryptionKey,
 	}, nil
 }
 
 // New RSA configuration
-func NewRSA(sm jwt.SigningMethod, privateKeyPem, publicKeyPem, encryptionKey []byte) (*RSA, error) {
+func NewRSA(sm jwt.SigningMethod, privateKeyPem, publicKeyPem []byte) (*RSA, error) {
 	if _, ok := sm.(*jwt.SigningMethodRSA); !ok {
 		return nil, errors.New("invalid signing method for rsa")
 	}
 
-	privateKey, err := jwt.ParseRSAPrivateKeyFromPEM(privateKeyPem)
-	if err != nil {
-		return nil, err
+	var privateKey *rsa.PrivateKey
+	var publicKey *rsa.PublicKey
+	var err error
+
+	if privateKeyPem != nil {
+		privateKey, err = jwt.ParseRSAPrivateKeyFromPEM(privateKeyPem)
+		if err != nil {
+			return nil, err
+		}
 	}
 
-	publicKey, err := jwt.ParseRSAPublicKeyFromPEM(publicKeyPem)
-	if err != nil {
-		return nil, err
+	if publicKeyPem != nil {
+		publicKey, err = jwt.ParseRSAPublicKeyFromPEM(publicKeyPem)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	return &RSA{
 		SigningMethod: sm,
 		PrivateKey:    privateKey,
 		PublicKey:     publicKey,
-		EncryptionKey: encryptionKey,
 	}, nil
 }
 
 // New ED configuration
-func NewED(sm jwt.SigningMethod, privateKeyPem, publicKeyPem, encryptionKey []byte) (*ED, error) {
+func NewED(sm jwt.SigningMethod, privateKeyPem, publicKeyPem []byte) (*ED, error) {
 	if _, ok := sm.(*jwt.SigningMethodEd25519); !ok {
-		return nil, errors.New("invalid signing method for hmac")
+		return nil, errors.New("invalid signing method for EdDSA")
 	}
 
 	var privateKey crypto.PrivateKey
@@ -151,9 +161,36 @@ func NewED(sm jwt.SigningMethod, privateKeyPem, publicKeyPem, encryptionKey []by
 		SigningMethod: sm,
 		PrivateKey:    privateKey,
 		PublicKey:     publicKey,
-		EncryptionKey: encryptionKey,
 	}, nil
 }
 
-// // New ED Public Only
-// func NewEDPublicOnly(sm jwt.SigningMethod, publicKeyPem )
+// New ES
+func NewEC(sm jwt.SigningMethod, privateKeyPem, publicKeyPem []byte) (*EC, error) {
+	if _, ok := sm.(*jwt.SigningMethodECDSA); !ok {
+		return nil, errors.New("invalid signing method for ECDSA")
+	}
+
+	var privateKey *ecdsa.PrivateKey
+	var publicKey *ecdsa.PublicKey
+	var err error
+
+	if privateKeyPem != nil {
+		privateKey, err = jwt.ParseECPrivateKeyFromPEM(privateKeyPem)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if publicKeyPem != nil {
+		publicKey, err = jwt.ParseECPublicKeyFromPEM(publicKeyPem)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return &EC{
+		SigningMethod: sm,
+		PrivateKey:    privateKey,
+		PublicKey:     publicKey,
+	}, nil
+}
